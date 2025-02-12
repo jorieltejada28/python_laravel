@@ -167,7 +167,7 @@ class EmployeeSeeder extends Seeder
                 'salary' => 62000.00,
                 'created_at' => now(),
                 'updated_at' => now(),
-            ]
+            ],
         ]);
     }
 }

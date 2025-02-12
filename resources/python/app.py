@@ -1,5 +1,4 @@
 from flask import Flask, jsonify
-import tensorflow as tf
 import numpy as np
 import random
 import MySQLdb
@@ -15,48 +14,17 @@ class Database:
         )
 
     def fetch_employees(self):
-        """Fetch all employee names from the database."""
+        """Fetch all employees as {id: name} mapping."""
         cursor = self.connection.cursor()
-        cursor.execute("SELECT name FROM employees")
-        employees = [row[0] for row in cursor.fetchall()]
+        cursor.execute("SELECT id, name FROM employees")
+        employees = {row[0]: row[1] for row in cursor.fetchall()}  # Store as {id: name}
         cursor.close()
         return employees
-
-    def fetch_past_schedules(self):
-        """Fetch past work schedules to train AI."""
-        cursor = self.connection.cursor()
-        cursor.execute("SELECT employee_name, day, time_slot FROM schedules")
-        past_schedules = cursor.fetchall()
-        cursor.close()
-
-        # Convert schedule data into numeric format for AI training
-        days_map = {day: i for i, day in enumerate(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])}
-        slots_map = {
-            "08:00 AM - 11:00 AM": 0,
-            "11:00 AM - 02:00 PM": 1,
-            "02:00 PM - 05:00 PM": 2,
-            "05:00 PM - 08:00 PM": 3
-        }
-
-        x_train = []
-        y_train = []
-
-        for emp, day, slot in past_schedules:
-            x_train.append([days_map[day], slots_map[slot]])
-            y_train.append(1)  # Label: Employee was assigned
-
-        return np.array(x_train), np.array(y_train)
 
 class Scheduler:
     """Generates AI-based weekly schedules for employees."""
 
-    TIME_SLOTS = [
-        "08:00 AM - 11:00 AM",
-        "11:00 AM - 02:00 PM",
-        "02:00 PM - 05:00 PM",
-        "05:00 PM - 08:00 PM"
-    ]
-
+    TIME_SLOTS = ["08:00 AM - 04:00 PM", "04:00 PM - 12:00 AM"]
     DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
     def __init__(self, db):
@@ -64,53 +32,57 @@ class Scheduler:
         self.model = self.train_ai_model()
 
     def train_ai_model(self):
-        """Train TensorFlow model based on past work schedules."""
-        x_train, y_train = self.db.fetch_past_schedules()
-
-        if len(x_train) == 0:
-            print("No past data available! AI will use random scheduling.")
-            return None
-
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(10, activation='relu', input_shape=(2,)),
-            tf.keras.layers.Dense(5, activation='relu'),
-            tf.keras.layers.Dense(1, activation='sigmoid')
-        ])
-
-        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        model.fit(x_train, y_train, epochs=100, verbose=0)
-
-        return model
+        """Placeholder for AI model training (Optional)."""
+        return None
 
     def generate_schedule(self):
-        """Generate AI-based weekly schedule ensuring each employee has one day off."""
-        employees = self.db.fetch_employees()
+        """Generate AI-based weekly schedule ensuring each employee has exactly one day off and no extra days off."""
+        employees = self.db.fetch_employees()  # Get {id: name}
+        employee_ids = list(employees.keys())  # List of employee IDs
 
-        if not employees or len(employees) < 6:
-            return {"error": "Not enough employees in the database. Minimum 6 required."}
-
-        # Assign a random day off for each employee
-        employee_days_off = {emp: random.choice(self.DAYS) for emp in employees}
+        if not employee_ids or len(employee_ids) < 8:
+            return {"error": "Not enough employees in the database. Minimum 8 required."}
 
         schedule = []
+        random.shuffle(employee_ids)  # Shuffle employees for fairness
+
+        # Assign exactly one unique day off per employee
+        employee_days_off = {}
+        assigned_days_off = {day: 0 for day in self.DAYS}  # Track how many employees have each day off
+
+        for emp_id in employee_ids:
+            available_days = [day for day in self.DAYS if assigned_days_off[day] < 1]  # Ensure only one day off per employee
+            assigned_day_off = random.choice(available_days) if available_days else random.choice(self.DAYS)
+
+            employee_days_off[emp_id] = assigned_day_off
+            assigned_days_off[assigned_day_off] += 1
+
         for day in self.DAYS:
             row = {"Day": day}
-            available_employees = [e for e in employees if employee_days_off[e] != day]
+            assigned_employees = set()
 
             for slot in self.TIME_SLOTS:
+                available_employee_ids = [e_id for e_id in employee_ids if employee_days_off[e_id] != day]
+
                 if self.model:
-                    # AI predicts which employees should work
                     input_data = np.array([[self.DAYS.index(day), self.TIME_SLOTS.index(slot)]])
                     predictions = self.model.predict(input_data)
-                    selected_employees = [available_employees[i] for i, p in enumerate(predictions[:len(available_employees)]) if p[0] > 0.5]
+                    selected_employee_ids = [
+                        available_employee_ids[i] for i, p in enumerate(predictions[:len(available_employee_ids)]) if p[0] > 0.5
+                    ]
                 else:
-                    selected_employees = random.sample(available_employees, min(6, len(available_employees)))  # Changed from 5 to 6
+                    selected_employee_ids = random.sample(available_employee_ids, min(8, len(available_employee_ids)))
 
-                row[slot] = ", ".join(selected_employees) if selected_employees else "No Employees"
+                # Prevent double shifts in a single day
+                selected_employee_ids = [e_id for e_id in selected_employee_ids if e_id not in assigned_employees]
+                assigned_employees.update(selected_employee_ids)
+
+                # Convert IDs to names for display
+                row[slot] = ", ".join([employees[e_id] for e_id in selected_employee_ids]) if selected_employee_ids else "No Employees"
+
             schedule.append(row)
 
         return schedule
-
 
 
 class FlaskApp:
@@ -132,7 +104,5 @@ class FlaskApp:
         """Run the Flask app."""
         self.app.run(debug=True, port=5000)
 
-
-# Start the Flask app
 if __name__ == '__main__':
     FlaskApp().run()

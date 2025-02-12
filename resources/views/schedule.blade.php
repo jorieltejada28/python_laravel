@@ -19,10 +19,8 @@
                     <thead class="table-dark">
                         <tr>
                             <th>Day</th>
-                            <th>08:00 AM - 11:00 AM</th>
-                            <th>11:00 AM - 02:00 PM</th>
-                            <th>02:00 PM - 05:00 PM</th>
-                            <th>05:00 PM - 08:00 PM</th>
+                            <th>08:00 AM - 04:00 PM</th>
+                            <th>04:00 PM - 12:00 AM</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -30,10 +28,8 @@
                             <tr>
                                 <td>{{ $row['Day'] }}</td>
                                 @foreach ([
-                                    '08:00 AM - 11:00 AM',
-                                    '11:00 AM - 02:00 PM',
-                                    '02:00 PM - 05:00 PM',
-                                    '05:00 PM - 08:00 PM'] as $slot)
+                                    '08:00 AM - 04:00 PM',
+                                    '04:00 PM - 12:00 AM'] as $slot)
                                     <td style="white-space: pre-line;">{{ str_replace(',', "\n", $row[$slot] ?? '') }}</td>
                                 @endforeach
                             </tr>
